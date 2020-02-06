@@ -122,7 +122,7 @@ class __GenotypeArrayInMemory__(object):
         '''Computes an unbiased estimate of L2(j) for j=1,..,M.'''
         func = lambda x: self.__l2_unbiased__(x, self.n)
         snp_getter = self.nextSNPs
-        return self.__corSumVarBlocks__(block_left, c, func, snp_getter, dominance=dominance, annot)
+        return self.__corSumVarBlocks__(block_left, c, func, snp_getter, annot, dominance=dominance)
 
     def ldScoreBlockJackknife(self, block_left, c, annot=None, jN=10):
         func = lambda x: np.square(x)
