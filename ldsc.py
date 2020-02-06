@@ -313,7 +313,7 @@ def ldscore(args, log):
             annot_matrix = pq
 
     log.log("Estimating LD Score.")
-    lN = geno_array.ldScoreVarBlocks(block_left, args.chunk_size, annot=annot_matrix)
+    lN = geno_array.ldScoreVarBlocks(block_left, args.chunk_size, dominance=args.dominance, annot=annot_matrix)
     col_prefix = "L2"; file_suffix = "l2"
 
     if n_annot == 1:
@@ -543,6 +543,12 @@ parser.add_argument('--chisq-max', default=None, type=float,
 parser.add_argument('--ref-ld-chr-cts', default=None, type=str,
     help='Name of a file that has a list of file name prefixes for cell-type-specific analysis.')
 parser.add_argument('--print-all-cts', action='store_true', default=False)
+
+# Custom flag for dominance
+parser.add_argument('--dominance', default=False, action='store_true',
+    help='This is a new argument which determines if dominance LD scores should be computed.'
+    'It is important to note that this flag only functions to produce new LD SCORES, and does'
+    'not modify any regressions. To impact regressions, you must input dominance LD scores and betas.')
 
 # Flags for both LD Score estimation and h2/gencor estimation
 parser.add_argument('--print-cov', default=False, action='store_true',

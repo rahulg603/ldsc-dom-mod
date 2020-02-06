@@ -118,11 +118,11 @@ class __GenotypeArrayInMemory__(object):
     def __filter_maf_(geno, m, n, maf):
         raise NotImplementedError
 
-    def ldScoreVarBlocks(self, block_left, c, annot=None):
+    def ldScoreVarBlocks(self, block_left, c, dominance=False, annot=None):
         '''Computes an unbiased estimate of L2(j) for j=1,..,M.'''
         func = lambda x: self.__l2_unbiased__(x, self.n)
         snp_getter = self.nextSNPs
-        return self.__corSumVarBlocks__(block_left, c, func, snp_getter, annot)
+        return self.__corSumVarBlocks__(block_left, c, func, snp_getter, dominance=dominance, annot)
 
     def ldScoreBlockJackknife(self, block_left, c, annot=None, jN=10):
         func = lambda x: np.square(x)
@@ -135,7 +135,7 @@ class __GenotypeArrayInMemory__(object):
         return sq - (1-sq) / denom
 
     # general methods for calculating sums of Pearson correlation coefficients
-    def __corSumVarBlocks__(self, block_left, c, func, snp_getter, annot=None):
+    def __corSumVarBlocks__(self, block_left, c, func, snp_getter, dominance=False, annot=None):
         '''
         Parameters
         ----------
@@ -156,6 +156,10 @@ class __GenotypeArrayInMemory__(object):
             genotypes with the minor allele as reference allele? etc)
         annot: numpy array with shape (m,n_a)
             SNP annotations.
+        dominance: bool, default False
+            Whether or not the dominance model should be used. The dominance implmentation
+            replaces the original nextSNPs function, however the dominance flag determines
+            which LD score is returned.
 
         Returns
         -------
@@ -186,7 +190,7 @@ class __GenotypeArrayInMemory__(object):
             c = 1
             b = m
         l_A = 0  # l_A := index of leftmost SNP in matrix A
-        A = snp_getter(b)
+        A = snp_getter(b, dominance=dominance)
         rfuncAB = np.zeros((b, c))
         rfuncBB = np.zeros((c, c))
         # chunk inside of block
@@ -224,7 +228,7 @@ class __GenotypeArrayInMemory__(object):
             if b != old_b:
                 rfuncAB = np.zeros((b, c))
 
-            B = snp_getter(c)
+            B = snp_getter(c, dominance=dominance)
             p1 = np.all(annot[l_A:l_A+b, :] == 0)
             p2 = np.all(annot[l_B:l_B+c, :] == 0)
             if p1 and p2:
@@ -357,7 +361,7 @@ class PlinkBEDFile(__GenotypeArrayInMemory__):
 
         return (y, m_poly, n, kept_snps, freq)
 
-    def nextSNPs(self, b, minorRef=None):
+    def nextSNPs(self, b, dominance=False, minorRef=None):
         '''
         Unpacks the binary array of genotypes and returns an n x b matrix of floats of
         normalized genotypes for the next b SNPs, where n := number of samples.
@@ -369,11 +373,19 @@ class PlinkBEDFile(__GenotypeArrayInMemory__):
         minorRef: bool, default None
             Should we flip reference alleles so that the minor allele is the reference?
             (This is useful for computing l1 w.r.t. minor allele).
+        dominance : bool, default False
+            Whether or not the dominance model should be used. The dominance implmentation
+            replaces the original nextSNPs function, however the dominance flag determines
+            which LD score is returned.
 
         Returns
         -------
         X : np.array with dtype float64 with shape (n, b), where n := number of samples
-            Matrix of genotypes normalized to mean zero and variance one. If minorRef is
+            Matrix of genotypes normalized to mean zero and variance one.
+            Note that this array will differ if the dominance flag is set to true.
+
+            ORIGINAL IMPLEMENTATION:
+            If minorRef is
             not None, then the minor allele will be the positive allele (i.e., two copies
             of the minor allele --> a positive number).
 
@@ -394,22 +406,46 @@ class PlinkBEDFile(__GenotypeArrayInMemory__):
         n = self.n
         nru = self.nru
         slice = self.geno[2*c*nru:2*(c+b)*nru]
-        X = np.array(slice.decode(self._bedcode), dtype="float64").reshape((b, nru)).T
-        X = X[0:n, :]
-        Y = np.zeros(X.shape)
+
+        X_A = np.array(slice.decode(self._bedcode), dtype="float64").reshape((b, nru)).T
+        X_D = np.copy(X_A)
+        X_A = X_A[0:n, :]
+        X_D = X_D[0:n, :]
+        Y_A = np.zeros(X_A.shape)
+        Y_D = np.copy(Y_A)
+
         for j in xrange(0, b):
-            newsnp = X[:, j]
-            ii = newsnp != 9
-            avg = np.mean(newsnp[ii])
-            newsnp[np.logical_not(ii)] = avg
-            denom = np.std(newsnp)
-            if denom == 0:
-                denom = 1
-
-            if minorRef is not None and self.freq[self._currentSNP + j] > 0.5:
-                denom = denom*-1
-
-            Y[:, j] = (newsnp - avg) / denom
+            if dominance is False:
+                newsnp_A = X_A[:, j]
+                ii = newsnp_A != 9
+                avg_A = np.mean(newsnp_A[ii])
+                newsnp_A[np.logical_not(ii)] = avg_A
+                denom_A = np.std(newsnp_A)
+                if denom_A == 0:
+                    denom_A = 1
+                Y_A[:, j] = (newsnp_A - avg_A) / denom_A
+                #if minorRef is not None and self.freq[self._currentSNP + j] > 0.5:
+                #    denom_A = denom_A*-1
+            else:
+                newsnp_D = X_D[:, j]
+                ii = newsnp_D != 9
+                avg_D = np.mean(newsnp_D[ii])
+                # Now the dominance effects.
+                p = avg_D / 2
+                newsnp_D[newsnp_D == 0] = - p / (1 - p)
+                newsnp_D[newsnp_D == 2] = - (1 - p) / p
+                # Average genotype imputation (everything that's 9 (unknown), gets
+                # sent to the average of the dominance encoded column).
+                avg_D = np.mean(newsnp_D[ii])
+                newsnp_D[np.logical_not(ii)] = avg_D
+                denom_D = np.std(newsnp_D)
+                if denom_D == 0:
+                    denom_D = 1
+                # and renormalise
+                Y_D[:,j] = (newsnp_D - avg_D) / denom_D
 
         self._currentSNP += b
-        return Y
+        if dominance is False:
+            return Y_A
+        else:
+            return Y_D
