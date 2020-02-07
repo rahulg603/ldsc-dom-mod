@@ -118,12 +118,12 @@ class __GenotypeArrayInMemory__(object):
     def __filter_maf_(geno, m, n, maf):
         raise NotImplementedError
 
-    def ldScoreVarBlocks(self, block_left, c, dominance=False, annot=None):
+    def ldScoreVarBlocks(self, block_left, c, dominance=False, annot=None, rsq=False):
         '''Computes an unbiased estimate of L2(j) for j=1,..,M.'''
         print "Dom value in ldScoreVarBlocks: " + str(dominance)
         func = lambda x: self.__l2_unbiased__(x, self.n)
         snp_getter = self.nextSNPs
-        return self.__corSumVarBlocks__(block_left=block_left, c=c, func=func, snp_getter=snp_getter, dominance=dominance, annot=annot)
+        return self.__corSumVarBlocks__(block_left=block_left, c=c, func=func, snp_getter=snp_getter, dominance=dominance, annot=annot, rsq=rsq)
 
     def ldScoreBlockJackknife(self, block_left, c, annot=None, jN=10):
         func = lambda x: np.square(x)
@@ -136,7 +136,7 @@ class __GenotypeArrayInMemory__(object):
         return sq - (1-sq) / denom
 
     # general methods for calculating sums of Pearson correlation coefficients
-    def __corSumVarBlocks__(self, block_left, c, func, snp_getter, dominance=False, annot=None):
+    def __corSumVarBlocks__(self, block_left, c, func, snp_getter, dominance=False, annot=None, rsq=False):
         '''
         Parameters
         ----------
@@ -161,6 +161,10 @@ class __GenotypeArrayInMemory__(object):
             Whether or not the dominance model should be used. The dominance implmentation
             replaces the original nextSNPs function, however the dominance flag determines
             which LD score is returned.
+        rsq: bool, defualt False
+            Determines if the outputted scores are the sum of r^2 (as normal) or the sum of
+            r^4 (ONLY FOR TROUBLESHOOTING). The purpose of r^4 is to see if additive r^4
+            roughly equals dominance r^2 (as expected by the theory).
 
         Returns
         -------
@@ -199,7 +203,10 @@ class __GenotypeArrayInMemory__(object):
             B = A[:, l_B:l_B+c]
             np.dot(A.T, B / n, out=rfuncAB)
             rfuncAB = func(rfuncAB)
-            cor_sum[l_A:l_A+b, :] += np.dot(rfuncAB, annot[l_B:l_B+c, :])
+            if rsq is False:
+                cor_sum[l_A:l_A+b, :] += np.dot(rfuncAB, annot[l_B:l_B+c, :])
+            else:
+                cor_sum[l_A:l_A+b, :] += np.square((np.dot(rfuncAB, annot[l_B:l_B+c, :])))
         # chunk to right of block
         b0 = b
         md = int(c*np.floor(m/c))
@@ -234,14 +241,23 @@ class __GenotypeArrayInMemory__(object):
             p2 = np.all(annot[l_B:l_B+c, :] == 0)
             if p1 and p2:
                 continue
-
-            np.dot(A.T, B / n, out=rfuncAB)
-            rfuncAB = func(rfuncAB)
-            cor_sum[l_A:l_A+b, :] += np.dot(rfuncAB, annot[l_B:l_B+c, :])
-            cor_sum[l_B:l_B+c, :] += np.dot(annot[l_A:l_A+b, :].T, rfuncAB).T
-            np.dot(B.T, B / n, out=rfuncBB)
-            rfuncBB = func(rfuncBB)
-            cor_sum[l_B:l_B+c, :] += np.dot(rfuncBB, annot[l_B:l_B+c, :])
+            
+            if rsq is False:
+                np.dot(A.T, B / n, out=rfuncAB)
+                rfuncAB = func(rfuncAB)
+                cor_sum[l_A:l_A+b, :] += np.dot(rfuncAB, annot[l_B:l_B+c, :])
+                cor_sum[l_B:l_B+c, :] += np.dot(annot[l_A:l_A+b, :].T, rfuncAB).T
+                np.dot(B.T, B / n, out=rfuncBB)
+                rfuncBB = func(rfuncBB)
+                cor_sum[l_B:l_B+c, :] += np.dot(rfuncBB, annot[l_B:l_B+c, :])
+            else:
+                np.dot(A.T, B / n, out=rfuncAB)
+                rfuncAB = func(rfuncAB)
+                cor_sum[l_A:l_A+b, :] += np.square(np.dot(rfuncAB, annot[l_B:l_B+c, :]))
+                cor_sum[l_B:l_B+c, :] += np.square(np.dot(annot[l_A:l_A+b, :].T, rfuncAB).T)
+                np.dot(B.T, B / n, out=rfuncBB)
+                rfuncBB = func(rfuncBB)
+                cor_sum[l_B:l_B+c, :] += np.square(np.dot(rfuncBB, annot[l_B:l_B+c, :]))
 
         return cor_sum
 
