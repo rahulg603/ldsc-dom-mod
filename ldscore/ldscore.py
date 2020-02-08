@@ -124,7 +124,7 @@ class __GenotypeArrayInMemory__(object):
         print "rsq value in ldScoreVarBlocks: " + str(rsq)
         func = lambda x: self.__l2_unbiased__(x, self.n, rsq=rsq)
         snp_getter = self.nextSNPs
-        return self.__corSumVarBlocks__(block_left=block_left, c=c, func=func, snp_getter=snp_getter, dominance=dominance, annot=annot, rsq=rsq)
+        return self.__corSumVarBlocks__(block_left=block_left, c=c, func=func, snp_getter=snp_getter, dominance=dominance, annot=annot)
 
     def ldScoreBlockJackknife(self, block_left, c, annot=None, jN=10):
         func = lambda x: np.square(x)
